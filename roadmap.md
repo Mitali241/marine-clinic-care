@@ -1,0 +1,3 @@
+- [x] Build responsive Marine Clinic ERP screens with mock sign-in, role-based navigation, and local sample records.
+- [x] Add role-access tests and unique page metadata.
+- [x] Validate preview behavior across Admin and Staff access.
