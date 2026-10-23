@@ -9,6 +9,7 @@ import {
   Bell,
   CalendarDays,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -17,6 +18,9 @@ import {
   Clock3,
   CreditCard,
   Download,
+  Edit,
+  Eye,
+  FileBadge,
   FileChartColumnIncreasing,
   FilePlus2,
   FileText,
@@ -32,7 +36,9 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Ship,
   Stethoscope,
+  Trash2,
   UserRound,
   UserRoundPlus,
   Users,
@@ -40,6 +46,12 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+
+import { CreateInvoiceModal } from "@/components/clinic/CreateInvoiceModal";
+import { InvoiceModal } from "@/components/clinic/InvoiceModal";
+import { InvoiceModule } from "@/components/clinic/InvoiceModule";
+import { PatientDetailModal } from "@/components/clinic/PatientDetailModal";
+import { PatientModal } from "@/components/clinic/PatientModal";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +76,7 @@ import {
   appointmentRecords,
   canAccessSection,
   clinicSections,
+  formatINR,
   getVisibleSections,
   initialPatients,
   invoiceRecords,
@@ -71,6 +84,7 @@ import {
   staffRecords,
   type ClinicRole,
   type ClinicSection,
+  type InvoiceRecord,
   type PatientRecord,
 } from "@/lib/clinic";
 
@@ -122,9 +136,69 @@ function ClinicApp() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [patients, setPatients] = useState(initialPatients);
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>(invoiceRecords);
   const [patientSearch, setPatientSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("Today, Oct 21, 2026");
   const [notice, setNotice] = useState("");
+
+  // Patient Modal States
+  const [patientModalOpen, setPatientModalOpen] = useState(false);
+  const [selectedPatientForEdit, setSelectedPatientForEdit] = useState<PatientRecord | null>(null);
+  const [selectedPatientForView, setSelectedPatientForView] = useState<PatientRecord | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+
+  // Invoice Modal State
+  const [createInvoiceModalOpen, setCreateInvoiceModalOpen] = useState(false);
+
+  const nextSrNo = useMemo(() => {
+    return patients.reduce((max, p) => Math.max(max, p.srNo || 0), 0) + 1;
+  }, [patients]);
+
+  const openAddModal = () => {
+    setSelectedPatientForEdit(null);
+    setPatientModalOpen(true);
+  };
+
+  const openEditModal = (patient: PatientRecord) => {
+    setSelectedPatientForEdit(patient);
+    setPatientModalOpen(true);
+  };
+
+  const openViewModal = (patient: PatientRecord) => {
+    setSelectedPatientForView(patient);
+    setDetailModalOpen(true);
+  };
+
+  const handleSavePatient = (saved: PatientRecord) => {
+    if (selectedPatientForEdit) {
+      setPatients((current) =>
+        current.map((item) => (item.id === saved.id ? saved : item))
+      );
+      setNotice(`${saved.name}'s marine record was updated successfully.`);
+    } else {
+      setPatients((current) => [saved, ...current]);
+      setNotice(`${saved.name} was added to patient records (Sr. #${saved.srNo}).`);
+    }
+  };
+
+  const handleDeletePatient = (id: string, name: string) => {
+    setPatients((current) => current.filter((item) => item.id !== id));
+    setNotice(`${name}'s record has been removed.`);
+  };
+
+  const handleAddInvoice = (newInv: InvoiceRecord) => {
+    setInvoices((prev) => [newInv, ...prev]);
+    setNotice(`Tax Invoice ${newInv.id} created for ${newInv.patient} (${newInv.amount}).`);
+  };
+
+  const handleUpdateInvoice = (updated: InvoiceRecord) => {
+    setInvoices((prev) => prev.map((inv) => (inv.id === updated.id ? updated : inv)));
+  };
+
+  const handleDeleteInvoice = (id: string) => {
+    setInvoices((prev) => prev.filter((inv) => inv.id !== id));
+    setNotice(`Invoice ${id} has been removed.`);
+  };
 
   useEffect(() => {
     if (!notice) return;
@@ -161,6 +235,7 @@ function ClinicApp() {
             active={section}
             collapsed={!sidebarOpen}
             onSelect={openSection}
+            patientCount={patients.length}
           />
         </aside>
 
@@ -172,6 +247,7 @@ function ClinicApp() {
               active={section}
               collapsed={false}
               onSelect={openSection}
+              patientCount={patients.length}
             />
           </SheetContent>
         </Sheet>
@@ -261,36 +337,52 @@ function ClinicApp() {
                     {sectionDescriptions[section]}
                   </p>
                 </div>
-                <PageActions section={section} onSelect={openSection} onNotice={setNotice} />
+                <PageActions
+                  section={section}
+                  onSelect={openSection}
+                  onNotice={setNotice}
+                  onAddPatient={openAddModal}
+                  onCreateInvoice={() => setCreateInvoiceModalOpen(true)}
+                />
               </div>
 
               {section === "dashboard" && (
-                <Dashboard onSelect={openSection} onNotice={setNotice} />
+                <Dashboard
+                  onSelect={openSection}
+                  onNotice={setNotice}
+                  onAddPatient={openAddModal}
+                  onEditPatient={openEditModal}
+                  onViewPatient={openViewModal}
+                  patients={patients}
+                />
               )}
               {section === "patients" && (
                 <PatientRecords
                   patients={patients}
                   search={patientSearch}
                   onSearch={setPatientSearch}
-                  onAdd={() => openSection("patients")}
+                  onAdd={openAddModal}
+                  onEdit={openEditModal}
+                  onView={openViewModal}
+                  onDelete={handleDeletePatient}
                   onNotice={setNotice}
                 />
               )}
-              {section === "invoices" && <InvoiceView onNotice={setNotice} />}
+              {section === "invoices" && (
+                <InvoiceModule
+                  invoices={invoices}
+                  patients={patients}
+                  onAddInvoice={handleAddInvoice}
+                  onUpdateInvoice={handleUpdateInvoice}
+                  onDeleteInvoice={handleDeleteInvoice}
+                  onNotice={setNotice}
+                />
+              )}
               {section === "payments" && <PaymentView onNotice={setNotice} />}
               {section === "staff" && <StaffView onNotice={setNotice} />}
               {section === "reports" && <ReportsView dateFilter={dateFilter} onDateFilter={setDateFilter} />} 
               {section === "activity" && <ActivityView />}
               {section === "settings" && <SettingsView onNotice={setNotice} />}
-
-              {section === "patients" && (
-                <AddPatientForm
-                  onAdd={(patient) => {
-                    setPatients((current) => [patient, ...current]);
-                    setNotice(`${patient.name} was added to patient records.`);
-                  }}
-                />
-              )}
             </div>
           </main>
           <footer className="border-t border-border px-4 py-4 text-center text-xs text-muted-foreground sm:px-6 lg:px-8">
@@ -318,6 +410,36 @@ function ClinicApp() {
           </Button>
         </div>
       )}
+
+      {/* Patient Add/Edit Modal */}
+      <PatientModal
+        open={patientModalOpen}
+        onOpenChange={setPatientModalOpen}
+        patientToEdit={selectedPatientForEdit}
+        nextSrNo={nextSrNo}
+        onSave={handleSavePatient}
+      />
+
+      {/* Create Tax Invoice Modal */}
+      <CreateInvoiceModal
+        open={createInvoiceModalOpen}
+        onOpenChange={setCreateInvoiceModalOpen}
+        patients={patients}
+        nextInvoiceNum={invoices.length + 85}
+        onSave={handleAddInvoice}
+      />
+
+      {/* Patient Detail / Dossier View Modal */}
+      <PatientDetailModal
+        patient={selectedPatientForView}
+        open={detailModalOpen}
+        onOpenChange={setDetailModalOpen}
+        onEdit={(p) => {
+          setSelectedPatientForEdit(p);
+          setPatientModalOpen(true);
+        }}
+        onPrintNotice={() => setNotice("Medical dossier sent to print queue.")}
+      />
     </div>
   );
 }
@@ -327,11 +449,13 @@ function SidebarContent({
   active,
   collapsed,
   onSelect,
+  patientCount,
 }: {
   role: ClinicRole;
   active: ClinicSection;
   collapsed: boolean;
   onSelect: (target: ClinicSection) => void;
+  patientCount?: number;
 }) {
   const groups = getVisibleSections(role).reduce(
     (acc, item) => {
@@ -340,6 +464,8 @@ function SidebarContent({
     },
     {} as Record<string, typeof clinicSections>,
   );
+
+  const displayCount = patientCount ?? initialPatients.length;
 
   return (
     <div className="flex h-full flex-col">
@@ -365,7 +491,7 @@ function SidebarContent({
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-semibold">Marine Clinic</p>
-              <p className="mt-0.5 truncate text-[10px] text-muted-foreground">New York, NY</p>
+              <p className="mt-0.5 truncate text-[10px] text-muted-foreground">Ballard Estate, Mumbai</p>
             </div>
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </div>
@@ -396,8 +522,8 @@ function SidebarContent({
                     <Icon className="size-[17px] shrink-0" />
                     {!collapsed && <span className="truncate">{item.label}</span>}
                     {!collapsed && item.id === "patients" && (
-                      <span className="ml-auto rounded px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        {initialPatients.length.toString().padStart(2, "0")}
+                      <span className="ml-auto rounded px-1.5 py-0.5 text-[10px] text-muted-foreground font-semibold">
+                        {displayCount.toString().padStart(2, "0")}
                       </span>
                     )}
                   </Button>
@@ -599,15 +725,19 @@ function PageActions({
   section,
   onSelect,
   onNotice,
+  onAddPatient,
+  onCreateInvoice,
 }: {
   section: ClinicSection;
   onSelect: (target: ClinicSection) => void;
   onNotice: (message: string) => void;
+  onAddPatient: () => void;
+  onCreateInvoice?: () => void;
 }) {
   if (section === "patients") {
     return (
-      <Button onClick={() => document.getElementById("add-patient")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
-        <UserRoundPlus />
+      <Button onClick={onAddPatient} className="gap-2">
+        <UserRoundPlus className="size-4" />
         Add patient
       </Button>
     );
@@ -616,21 +746,29 @@ function PageActions({
     return (
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" onClick={() => onNotice("Today's clinic summary is ready to download.")}>
-          <Download />
+          <Download className="size-4" />
           <span className="hidden sm:inline">Export</span>
         </Button>
-        <Button onClick={() => onSelect("patients")}>
-          <Plus />
+        <Button onClick={onAddPatient} className="gap-2">
+          <Plus className="size-4" />
           New patient
         </Button>
       </div>
     );
   }
   if (section === "invoices") {
-    return <Button onClick={() => onNotice("A new invoice draft has been created.")}><FilePlus2 /> New invoice</Button>;
+    return (
+      <Button onClick={onCreateInvoice} className="gap-2">
+        <FilePlus2 className="size-4" /> New invoice
+      </Button>
+    );
   }
   if (section === "staff") {
-    return <Button onClick={() => onNotice("Invite link copied for a new team member.")}><UserRoundPlus /> Add team member</Button>;
+    return (
+      <Button onClick={() => onNotice("Invite link copied for a new team member.")} className="gap-2">
+        <UserRoundPlus className="size-4" /> Add team member
+      </Button>
+    );
   }
   return null;
 }
@@ -638,15 +776,23 @@ function PageActions({
 function Dashboard({
   onSelect,
   onNotice,
+  onAddPatient,
+  onEditPatient,
+  onViewPatient,
+  patients,
 }: {
   onSelect: (target: ClinicSection) => void;
   onNotice: (message: string) => void;
+  onAddPatient: () => void;
+  onEditPatient: (patient: PatientRecord) => void;
+  onViewPatient: (patient: PatientRecord) => void;
+  patients: PatientRecord[];
 }) {
   const metricCards = [
-    { label: "Total patients", value: "2,486", detail: "+12.8% this month", positive: true, icon: Users, shade: "bg-secondary text-secondary-foreground", trend: "M0 18 L10 15 L20 17 L30 8 L40 11 L50 4 L60 7" },
-    { label: "Appointments", value: "64", detail: "+8 scheduled today", positive: true, icon: CalendarDays, shade: "bg-accent text-accent-foreground", trend: "M0 16 L10 13 L20 15 L30 7 L40 10 L50 2 L60 5" },
-    { label: "Revenue this month", value: "$48,290", detail: "+6.2% vs last month", positive: true, icon: WalletCards, shade: "bg-[color:color-mix(in_oklab,var(--chart-3)_14%,white)] text-foreground", trend: "M0 19 L10 16 L20 12 L30 15 L40 8 L50 7 L60 2" },
-    { label: "Pending invoices", value: "18", detail: "$3,840 outstanding", positive: false, icon: FileText, shade: "bg-[color:color-mix(in_oklab,var(--chart-4)_12%,white)] text-foreground", trend: "M0 5 L10 9 L20 4 L30 11 L40 8 L50 15 L60 13" },
+    { label: "Total seafarers", value: `${2480 + patients.length}`, detail: "+14 registered today", positive: true, icon: Users, shade: "bg-secondary text-secondary-foreground", trend: "M0 18 L10 15 L20 17 L30 8 L40 11 L50 4 L60 7" },
+    { label: "Medicals today", value: "38", detail: "USG & X-Ray active", positive: true, icon: CalendarDays, shade: "bg-accent text-accent-foreground", trend: "M0 16 L10 13 L20 15 L30 7 L40 10 L50 2 L60 5" },
+    { label: "Revenue this month", value: "₹4,82,900", detail: "+6.2% vs last month", positive: true, icon: WalletCards, shade: "bg-[color:color-mix(in_oklab,var(--chart-3)_14%,white)] text-foreground", trend: "M0 19 L10 16 L20 12 L30 15 L40 8 L50 7 L60 2" },
+    { label: "Pending medicals", value: "6", detail: "Awaiting USG / Lab", positive: false, icon: FileText, shade: "bg-[color:color-mix(in_oklab,var(--chart-4)_12%,white)] text-foreground", trend: "M0 5 L10 9 L20 4 L30 11 L40 8 L50 15 L60 13" },
   ];
 
   return (
@@ -687,7 +833,7 @@ function Dashboard({
               <p className="mt-1 text-xs text-muted-foreground">Your clinic schedule at a glance</p>
             </div>
             <Button variant="outline" size="sm" onClick={() => onNotice("Full appointment calendar opened.")}>
-              View schedule <ArrowRight />
+              View schedule <ArrowRight className="size-3.5 ml-1" />
             </Button>
           </div>
           <div className="overflow-x-auto">
@@ -695,9 +841,9 @@ function Dashboard({
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-[105px] pl-5">Time</TableHead>
-                  <TableHead>Patient</TableHead>
+                  <TableHead>Candidate</TableHead>
                   <TableHead className="hidden md:table-cell">Provider</TableHead>
-                  <TableHead className="hidden sm:table-cell">Visit type</TableHead>
+                  <TableHead className="hidden sm:table-cell">Examination</TableHead>
                   <TableHead className="pr-5 text-right">Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -722,7 +868,7 @@ function Dashboard({
             </Table>
           </div>
           <button type="button" onClick={() => onSelect("patients")} className="flex w-full items-center justify-between border-t border-border px-5 py-3 text-xs font-medium text-primary hover:bg-muted/40">
-            See patient records <ArrowRight className="size-3.5" />
+            See all patient records <ArrowRight className="size-3.5" />
           </button>
         </section>
 
@@ -736,10 +882,10 @@ function Dashboard({
               <MoreHorizontal className="size-4 text-muted-foreground" />
             </div>
             <div className="grid grid-cols-2 gap-2.5 p-4 sm:p-5">
-              <QuickAction icon={UserRoundPlus} title="Add patient" detail="Create a new record" onClick={() => onSelect("patients")} />
-              <QuickAction icon={FilePlus2} title="New invoice" detail="Start a billing draft" onClick={() => onSelect("invoices")} />
-              <QuickAction icon={CreditCard} title="Record payment" detail="Log a transaction" onClick={() => onSelect("payments")} />
-              <QuickAction icon={FileChartColumnIncreasing} title="View reports" detail="Explore clinic metrics" onClick={() => onSelect("reports")} />
+              <QuickAction icon={UserRoundPlus} title="Add patient" detail="Popup form with CDC & INDoS" onClick={onAddPatient} />
+              <QuickAction icon={FilePlus2} title="New invoice" detail="Candidate billing draft" onClick={() => onSelect("invoices")} />
+              <QuickAction icon={CreditCard} title="Record payment" detail="Paid / Own status" onClick={() => onSelect("payments")} />
+              <QuickAction icon={FileChartColumnIncreasing} title="View reports" detail="DG Shipping statistics" onClick={() => onSelect("reports")} />
             </div>
           </section>
 
@@ -750,7 +896,7 @@ function Dashboard({
                 <p className="mt-1 text-xs text-muted-foreground">Latest updates from your team</p>
               </div>
               <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-primary" onClick={() => onSelect("activity")}>
-                View all <ArrowRight />
+                View all <ArrowRight className="size-3 ml-1" />
               </Button>
             </div>
             <div className="divide-y divide-border px-4 sm:px-5">
@@ -777,14 +923,24 @@ function Dashboard({
       <section className="rounded-md border border-border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
           <div>
-            <h2 className="text-sm font-semibold">Recently added patients</h2>
-            <p className="mt-1 text-xs text-muted-foreground">The latest patients in your care</p>
+            <h2 className="text-sm font-semibold">Recently examined seafarers</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Latest marine candidate records with full fields</p>
           </div>
-          <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => onSelect("patients")}>
-            All patients <ArrowRight />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={onAddPatient} className="gap-1.5 text-xs">
+              <Plus className="size-3.5" /> Add candidate
+            </Button>
+            <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => onSelect("patients")}>
+              All patients <ArrowRight className="size-3.5 ml-1" />
+            </Button>
+          </div>
         </div>
-        <PatientTable patients={initialPatients.slice(0, 4)} compact />
+        <PatientTable
+          patients={patients.slice(0, 4)}
+          compact
+          onEdit={onEditPatient}
+          onView={onViewPatient}
+        />
       </section>
     </div>
   );
@@ -802,7 +958,7 @@ function QuickAction({
   onClick: () => void;
 }) {
   return (
-    <Button type="button" variant="outline" onClick={onClick} className="h-auto min-h-[86px] flex-col items-start justify-start gap-2 rounded-md whitespace-normal px-3 py-3 text-left">
+    <Button type="button" variant="outline" onClick={onClick} className="h-auto min-h-[86px] flex-col items-start justify-start gap-2 rounded-md whitespace-normal px-3 py-3 text-left hover:border-primary/50 transition-colors">
       <span className="grid size-7 place-items-center rounded bg-secondary text-primary"><Icon className="size-4" /></span>
       <span className="w-full text-left">
         <span className="block text-xs font-semibold text-foreground">{title}</span>
@@ -817,152 +973,381 @@ function PatientRecords({
   search,
   onSearch,
   onAdd,
+  onEdit,
+  onView,
+  onDelete,
   onNotice,
 }: {
   patients: PatientRecord[];
   search: string;
   onSearch: (value: string) => void;
   onAdd: () => void;
+  onEdit: (patient: PatientRecord) => void;
+  onView: (patient: PatientRecord) => void;
+  onDelete: (id: string, name: string) => void;
   onNotice: (message: string) => void;
 }) {
   const filtered = useMemo(
-    () => patients.filter((patient) => `${patient.name} ${patient.id} ${patient.condition}`.toLowerCase().includes(search.toLowerCase())),
+    () =>
+      patients.filter((patient) =>
+        `${patient.name} ${patient.id} ${patient.rank || ""} ${patient.companyName || ""} ${patient.certificateNo || ""} ${patient.indosNo || ""} ${patient.cdcNo || ""} ${patient.typeOfMedical || ""} ${patient.paymentStatus || ""} ${patient.condition || ""}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+      ),
     [patients, search],
   );
 
   return (
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-3">
-        <SmallMetric label="Total records" value="2,486" icon={Users} note="Across all services" />
-        <SmallMetric label="Active this month" value="184" icon={Activity} note="+12% from last month" />
-        <SmallMetric label="Follow-up due" value="36" icon={CalendarDays} note="Next 7 days" />
+        <SmallMetric label="Total seafarer records" value={`${patients.length}`} icon={Users} note="DG Shipping approved register" />
+        <SmallMetric label="Paid / Cleared" value={`${patients.filter(p => p.paymentStatus === "Paid").length}`} icon={Activity} note="Company & candidate settled" />
+        <SmallMetric label="Own / Pending" value={`${patients.filter(p => p.paymentStatus !== "Paid").length}`} icon={CalendarDays} note="Pending verification" />
       </div>
+
       <section className="rounded-md border border-border bg-card">
         <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <div>
-            <h2 className="text-sm font-semibold">All patient records</h2>
-            <p className="mt-1 text-xs text-muted-foreground">{patients.length} patients in this demo workspace</p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">All seafarer patient records</h2>
+              <Badge variant="outline" className="text-[10px] font-mono">
+                {filtered.length} records
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Includes INDoS, CDC, Certificate, USG/X-Ray, Time In/Out & Payment Status (Paid / Own)
+            </p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="relative sm:w-[230px]">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative sm:w-[260px]">
               <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
               <Input
                 aria-label="Search patient records"
-                placeholder="Search patients..."
+                placeholder="Search name, INDoS, CDC, rank..."
                 value={search}
                 onChange={(event) => onSearch(event.target.value)}
                 className="h-9 pl-9 text-xs"
               />
             </div>
-            <Button variant="outline" size="sm" onClick={() => onNotice("Showing all patient statuses.")}>
-              <Filter /> Status
+            <Button variant="outline" size="sm" onClick={() => onNotice("Filtered by all active statuses.")}>
+              <Filter className="size-3.5 mr-1" /> Filter
             </Button>
-            <Button size="sm" onClick={onAdd}><UserRoundPlus /> Add patient</Button>
+            <Button size="sm" onClick={onAdd} className="gap-1.5 shadow-sm">
+              <UserRoundPlus className="size-4" /> Add patient
+            </Button>
           </div>
         </div>
-        {filtered.length ? <PatientTable patients={filtered} /> : <EmptyState title="No matching patients" detail="Try another name or record number." />}
+
+        {filtered.length ? (
+          <PatientTable
+            patients={filtered}
+            onEdit={onEdit}
+            onView={onView}
+            onDelete={onDelete}
+          />
+        ) : (
+          <EmptyState title="No matching seafarer found" detail="Try another candidate name, INDoS, CDC, or certificate number." />
+        )}
+
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-5">
           <span>Showing {filtered.length} of {patients.length} records</span>
           <div className="flex items-center gap-1">
-            <Button aria-label="Previous page" variant="outline" size="icon" className="size-7" onClick={() => onNotice("You're viewing the newest patient records.")}><ChevronLeft /></Button>
-            <Button size="icon" className="size-7" aria-current="page">1</Button>
-            <Button aria-label="Next page" variant="outline" size="icon" className="size-7" onClick={() => onNotice("There are no additional demo records.")}><ChevronRight /></Button>
+            <Button aria-label="Previous page" variant="outline" size="icon" className="size-7" onClick={() => onNotice("Viewing latest seafarer records.")}><ChevronLeft className="size-3.5" /></Button>
+            <Button size="icon" className="size-7 text-xs font-semibold" aria-current="page">1</Button>
+            <Button aria-label="Next page" variant="outline" size="icon" className="size-7" onClick={() => onNotice("All demo records are displayed.")}><ChevronRight className="size-3.5" /></Button>
           </div>
         </div>
       </section>
-      <section id="add-patient" className="scroll-mt-24 rounded-md border border-border bg-card">
-        <AddPatientForm onAdd={(patient) => {
-          onSearch("");
-          onNotice(`${patient.name} was added to patient records.`);
-        }} />
+
+      {/* Modern Seafarer Registration Banner */}
+      <section className="rounded-xl border border-primary/25 bg-gradient-to-r from-primary/5 via-card to-secondary/30 p-5 shadow-sm">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+              <Ship className="size-6" />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Examine & Register New Marine Candidate</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Opens complete popup form: Sr. No, Date, Contact, Rank, Medical Type, USG/X-Ray, Company, Payment (Paid/Own, Amt, Proof, Mode), Time In/Out, Cert, INDoS & CDC.
+              </p>
+            </div>
+          </div>
+          <Button onClick={onAdd} className="gap-2 shrink-0 font-medium shadow-sm">
+            <UserRoundPlus className="size-4" /> Add Patient Record
+          </Button>
+        </div>
       </section>
     </div>
   );
 }
 
-function AddPatientForm({ onAdd }: { onAdd: (patient: PatientRecord) => void }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [condition, setCondition] = useState("");
-  const [age, setAge] = useState("");
-
-  return (
-    <form
-      className="p-4 sm:p-5"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const cleanName = name.trim();
-        if (!cleanName) return;
-        onAdd({
-          id: `PT-${Date.now().toString().slice(-4)}`,
-          name: cleanName,
-          initials: cleanName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(),
-          age: Number(age) || 0,
-          gender: "Not specified",
-          phone: phone || "—",
-          email: email || "—",
-          lastVisit: "Oct 21, 2026",
-          nextVisit: "Not scheduled",
-          condition: condition || "General medicine",
-          status: "New",
-        });
-        setName(""); setEmail(""); setPhone(""); setCondition(""); setAge("");
-      }}
-    >
-      <div className="mb-4 flex items-center gap-3 border-b border-border pb-4">
-        <span className="grid size-9 place-items-center rounded-md bg-secondary text-primary"><UserRoundPlus className="size-[18px]" /></span>
-        <div>
-          <h2 className="text-sm font-semibold">Add a patient</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Create a local demo record.</p>
-        </div>
+function PatientTable({
+  patients,
+  compact = false,
+  onEdit,
+  onView,
+  onDelete,
+}: {
+  patients: PatientRecord[];
+  compact?: boolean;
+  onEdit?: (patient: PatientRecord) => void;
+  onView?: (patient: PatientRecord) => void;
+  onDelete?: (id: string, name: string) => void;
+}) {
+  if (compact) {
+    return (
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-[60px] pl-5 text-xs">Sr.</TableHead>
+              <TableHead className="min-w-[190px] text-xs">Candidate</TableHead>
+              <TableHead className="min-w-[170px] text-xs">Rank & Company</TableHead>
+              <TableHead className="min-w-[140px] text-xs">Payment (Paid/Own)</TableHead>
+              <TableHead className="hidden min-w-[120px] md:table-cell text-xs">Time In/Out</TableHead>
+              <TableHead className="pr-5 text-right text-xs">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {patients.map((patient) => (
+              <TableRow key={patient.id} className="hover:bg-muted/40 transition-colors">
+                <TableCell className="pl-5">
+                  <Badge variant="outline" className="font-mono text-[11px] font-semibold bg-muted/40">
+                    #{patient.srNo}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2.5">
+                    <Avatar className="size-8">
+                      <AvatarFallback className="bg-secondary text-[10px] font-semibold text-secondary-foreground">
+                        {patient.initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => onView?.(patient)}
+                        className="text-left font-semibold text-xs hover:text-primary transition-colors hover:underline block"
+                      >
+                        {patient.name}
+                      </button>
+                      <div className="text-[10px] text-muted-foreground">{patient.phone}</div>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="text-xs font-medium text-foreground">{patient.rank}</div>
+                  <div className="text-[11px] text-muted-foreground truncate max-w-[150px]">{patient.companyName}</div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5">
+                    <Badge
+                      variant={patient.paymentStatus === "Paid" ? "default" : "outline"}
+                      className="text-[10px] px-1.5 py-0"
+                    >
+                      {patient.paymentStatus}
+                    </Badge>
+                    <span className="text-xs font-semibold">{patient.paymentAmount}</span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">{patient.paymentMode}</div>
+                </TableCell>
+                <TableCell className="hidden md:table-cell">
+                  <div className="text-xs text-muted-foreground">
+                    {patient.timeIn} - {patient.timeOut}
+                  </div>
+                </TableCell>
+                <TableCell className="pr-5 text-right">
+                  <div className="flex items-center justify-end gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1 px-2 text-xs font-medium text-primary hover:bg-primary/10 border-primary/30"
+                      onClick={() => onEdit?.(patient)}
+                      title="Edit Patient Details"
+                    >
+                      <Edit className="size-3" />
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="size-7 p-0"
+                      onClick={() => onView?.(patient)}
+                      title="View Medical Dossier"
+                    >
+                      <Eye className="size-3.5" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Full name" htmlFor="patient-name"><Input id="patient-name" placeholder="Patient name" value={name} onChange={(event) => setName(event.target.value)} required /></Field>
-        <Field label="Email address" htmlFor="patient-email"><Input id="patient-email" type="email" placeholder="name@example.com" value={email} onChange={(event) => setEmail(event.target.value)} /></Field>
-        <Field label="Phone number" htmlFor="patient-phone"><Input id="patient-phone" type="tel" placeholder="+1 (212) 555-0100" value={phone} onChange={(event) => setPhone(event.target.value)} /></Field>
-        <Field label="Age" htmlFor="patient-age"><Input id="patient-age" type="number" min="0" max="125" placeholder="Age" value={age} onChange={(event) => setAge(event.target.value)} /></Field>
-        <Field label="Visit reason" htmlFor="patient-condition"><Input id="patient-condition" placeholder="e.g. Annual checkup" value={condition} onChange={(event) => setCondition(event.target.value)} /></Field>
-        <div className="flex items-end"><Button type="submit" className="w-full sm:w-auto"><Plus /> Save patient</Button></div>
-      </div>
-      <p className="mt-3 text-[11px] text-muted-foreground">Demo details stay in this browser session only.</p>
-    </form>
-  );
-}
+    );
+  }
 
-function PatientTable({ patients, compact = false }: { patients: PatientRecord[]; compact?: boolean }) {
   return (
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="min-w-[210px] pl-5">Patient</TableHead>
-            <TableHead className="min-w-[115px]">Patient ID</TableHead>
-            {!compact && <TableHead className="hidden min-w-[175px] lg:table-cell">Contact</TableHead>}
-            <TableHead className="min-w-[155px]">Last visit</TableHead>
-            <TableHead className="hidden min-w-[165px] md:table-cell">Next appointment</TableHead>
-            <TableHead className="min-w-[120px]">Status</TableHead>
-            <TableHead className="pr-5 text-right"> </TableHead>
+            <TableHead className="w-[55px] pl-5 text-xs">Sr.</TableHead>
+            <TableHead className="min-w-[200px] text-xs">Candidate & Rank</TableHead>
+            <TableHead className="min-w-[170px] text-xs">Credentials (INDoS / CDC / Cert)</TableHead>
+            <TableHead className="min-w-[180px] text-xs">Medical & Company</TableHead>
+            <TableHead className="min-w-[160px] text-xs">USG / X-Ray</TableHead>
+            <TableHead className="min-w-[130px] text-xs">Time In & Out</TableHead>
+            <TableHead className="min-w-[160px] text-xs">Payment (Paid / Own)</TableHead>
+            <TableHead className="min-w-[110px] text-xs">Exam Date</TableHead>
+            <TableHead className="pr-5 text-right min-w-[130px] text-xs">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {patients.map((patient) => (
-            <TableRow key={patient.id}>
+            <TableRow key={patient.id} className="hover:bg-muted/40 transition-colors">
+              {/* 1. Sr. No */}
               <TableCell className="pl-5">
+                <Badge variant="outline" className="font-mono text-xs font-bold bg-muted/60">
+                  #{patient.srNo}
+                </Badge>
+              </TableCell>
+
+              {/* 2. Candidate Name, DOB, Contact & Rank */}
+              <TableCell>
                 <div className="flex items-center gap-2.5">
-                  <Avatar className="size-8"><AvatarFallback className="bg-secondary text-[10px] font-semibold text-secondary-foreground">{patient.initials}</AvatarFallback></Avatar>
+                  <Avatar className="size-9 border border-primary/20">
+                    <AvatarFallback className="bg-primary/10 text-[11px] font-bold text-primary">
+                      {patient.initials}
+                    </AvatarFallback>
+                  </Avatar>
                   <div>
-                    <div className="whitespace-nowrap text-xs font-semibold">{patient.name}</div>
-                    <div className="mt-0.5 text-[10px] text-muted-foreground">{patient.age || "—"} yrs <span className="mx-1">·</span> {patient.condition}</div>
+                    <button
+                      type="button"
+                      onClick={() => onView?.(patient)}
+                      className="text-left font-semibold text-xs text-foreground hover:text-primary transition-colors hover:underline block"
+                    >
+                      {patient.name}
+                    </button>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="rounded bg-secondary/80 px-1 py-0.2 text-[10px] font-medium text-secondary-foreground">
+                        {patient.rank}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {patient.age}y · {patient.dob}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{patient.phone}</div>
                   </div>
                 </div>
               </TableCell>
-              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{patient.id}</TableCell>
-              {!compact && <TableCell className="hidden whitespace-nowrap text-xs text-muted-foreground lg:table-cell">{patient.phone}</TableCell>}
-              <TableCell className="whitespace-nowrap text-xs">{patient.lastVisit}</TableCell>
-              <TableCell className="hidden whitespace-nowrap text-xs text-muted-foreground md:table-cell">{patient.nextVisit}</TableCell>
-              <TableCell><StatusBadge status={patient.status} /></TableCell>
-              <TableCell className="pr-5 text-right"><Button aria-label={`More about ${patient.name}`} variant="ghost" size="icon" className="size-7"><MoreHorizontal /></Button></TableCell>
+
+              {/* 3. Credentials: Cert No, INDoS No, CDC No */}
+              <TableCell>
+                <div className="space-y-0.5 font-mono text-[11px]">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground font-sans">Cert:</span>
+                    <span className="font-semibold text-foreground tracking-wide">{patient.certificateNo || "—"}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground font-sans">INDoS:</span>
+                    <span className="text-muted-foreground">{patient.indosNo || "—"}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground font-sans">CDC:</span>
+                    <span className="text-muted-foreground">{patient.cdcNo || "—"}</span>
+                  </div>
+                </div>
+              </TableCell>
+
+              {/* 4. Company & Medical Type */}
+              <TableCell>
+                <div className="text-xs font-semibold text-foreground truncate max-w-[170px]" title={patient.companyName}>
+                  {patient.companyName}
+                </div>
+                <div className="text-[11px] text-muted-foreground truncate max-w-[170px]" title={patient.typeOfMedical}>
+                  {patient.typeOfMedical}
+                </div>
+                {patient.invoiceNo && (
+                  <div className="font-mono text-[10px] text-primary/80 mt-0.5">
+                    Inv: {patient.invoiceNo}
+                  </div>
+                )}
+              </TableCell>
+
+              {/* 5. USG / XRay */}
+              <TableCell>
+                <div className="inline-flex items-center gap-1 text-xs font-medium text-accent-foreground">
+                  <CheckCircle2 className="size-3.5 shrink-0" />
+                  <span className="truncate max-w-[140px]" title={patient.usgXray}>{patient.usgXray}</span>
+                </div>
+              </TableCell>
+
+              {/* 6. Time In & Out */}
+              <TableCell>
+                <div className="text-xs font-medium text-foreground whitespace-nowrap">
+                  {patient.timeIn}
+                </div>
+                <div className="text-[10px] text-muted-foreground whitespace-nowrap">
+                  to {patient.timeOut}
+                </div>
+              </TableCell>
+
+              {/* 7. Status (Payment - Paid / Own), Amt, Proof, Mode, Trans ID */}
+              <TableCell>
+                <div className="flex items-center gap-1.5">
+                  <Badge
+                    variant={patient.paymentStatus === "Paid" ? "default" : "outline"}
+                    className="text-[10px] font-semibold px-2 py-0.5"
+                  >
+                    {patient.paymentStatus}
+                  </Badge>
+                  <span className="text-xs font-bold text-foreground">{patient.paymentAmount}</span>
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[150px]">
+                  {patient.paymentMode} · {patient.transactionId || patient.paymentProof || "—"}
+                </div>
+              </TableCell>
+
+              {/* 8. Exam Date */}
+              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                {patient.date || patient.lastVisit}
+              </TableCell>
+
+              {/* 9. Actions: Edit, View, Delete */}
+              <TableCell className="pr-5 text-right">
+                <div className="flex items-center justify-end gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1 px-2.5 text-xs font-medium text-primary hover:bg-primary/10 border-primary/30 shadow-xs"
+                    onClick={() => onEdit?.(patient)}
+                    title="Edit candidate record"
+                  >
+                    <Edit className="size-3" />
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="size-7 p-0"
+                    onClick={() => onView?.(patient)}
+                    title="View seafarer dossier"
+                  >
+                    <Eye className="size-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="size-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => onDelete?.(patient.id, patient.name)}
+                    title="Remove record"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -971,41 +1356,13 @@ function PatientTable({ patients, compact = false }: { patients: PatientRecord[]
   );
 }
 
-function InvoiceView({ onNotice }: { onNotice: (message: string) => void }) {
-  const total = invoiceRecords.filter((invoice) => invoice.status === "Pending" || invoice.status === "Overdue").length;
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <SmallMetric label="Collected this month" value="$38,450" icon={WalletCards} note="+9.4% vs last month" />
-        <SmallMetric label="Outstanding" value="$3,840" icon={Clock3} note={`${total} invoices to follow up`} />
-        <SmallMetric label="Paid invoices" value="142" icon={Check} note="This month" />
-      </div>
-      <section className="rounded-md border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
-          <div><h2 className="text-sm font-semibold">All invoices</h2><p className="mt-1 text-xs text-muted-foreground">Recent billing activity from your clinic</p></div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => onNotice("Invoice status filters applied.")}><Filter /> Filter</Button>
-            <Button size="sm" onClick={() => onNotice("A new invoice draft has been created.")}><FilePlus2 /> Create invoice</Button>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <Table><TableHeader><TableRow className="hover:bg-transparent"><TableHead className="pl-5">Invoice</TableHead><TableHead>Patient</TableHead><TableHead>Date issued</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead><TableHead className="pr-5 text-right"> </TableHead></TableRow></TableHeader>
-            <TableBody>{invoiceRecords.map((invoice) => <TableRow key={invoice.id}><TableCell className="whitespace-nowrap pl-5 text-xs font-semibold text-primary">{invoice.id}</TableCell><TableCell className="whitespace-nowrap text-xs font-medium">{invoice.patient}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{invoice.date}</TableCell><TableCell className="whitespace-nowrap text-xs font-semibold">{invoice.amount}</TableCell><TableCell><StatusBadge status={invoice.status} /></TableCell><TableCell className="pr-5 text-right"><Button variant="ghost" size="icon" aria-label={`More actions for ${invoice.id}`} className="size-7" onClick={() => onNotice(`${invoice.id} details opened.`)}><MoreHorizontal /></Button></TableCell></TableRow>)}</TableBody>
-          </Table>
-        </div>
-        <TableFooterNote text="Showing 6 of 160 invoices" />
-      </section>
-    </div>
-  );
-}
-
 function PaymentView({ onNotice }: { onNotice: (message: string) => void }) {
   return (
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-3">
-        <SmallMetric label="Collected today" value="$985.00" icon={WalletCards} note="5 transactions" />
-        <SmallMetric label="This month" value="$38,450" icon={CreditCard} note="+9.4% vs last month" />
-        <SmallMetric label="Processing" value="3" icon={Clock3} note="$1,280 awaiting settlement" />
+        <SmallMetric label="Collected today" value="₹24,500" icon={WalletCards} note="5 transactions" />
+        <SmallMetric label="This month" value="₹3,84,500" icon={CreditCard} note="+9.4% vs last month" />
+        <SmallMetric label="Processing" value="3" icon={Clock3} note="₹18,500 awaiting settlement" />
       </div>
       <section className="rounded-md border border-border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
@@ -1037,10 +1394,10 @@ function ReportsView({ dateFilter, onDateFilter }: { dateFilter: string; onDateF
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-4 py-3 sm:px-5"><div className="flex items-center gap-2 text-sm font-medium"><CalendarDays className="size-4 text-primary" /> Reporting period</div><select aria-label="Reporting period" value={dateFilter} onChange={(event) => onDateFilter(event.target.value)} className="h-9 max-w-[185px] rounded-md border border-input bg-background px-2 text-xs font-medium"><option>Today, Oct 21, 2026</option><option>This week, Oct 19–25</option><option>This month, October 2026</option><option>This quarter, Q4 2026</option></select></div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><SmallMetric label="Total revenue" value="$48,290" icon={WalletCards} note="+6.2% vs previous period" /><SmallMetric label="Patients seen" value="1,284" icon={Users} note="+12.8% vs previous period" /><SmallMetric label="Appointments" value="1,406" icon={CalendarDays} note="94.2% completion rate" /><SmallMetric label="Avg. visit value" value="$176.40" icon={FileChartColumnIncreasing} note="+3.1% vs previous period" /></div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><SmallMetric label="Total revenue" value="₹4,82,900" icon={WalletCards} note="+6.2% vs previous period" /><SmallMetric label="Patients seen" value="1,284" icon={Users} note="+12.8% vs previous period" /><SmallMetric label="Appointments" value="1,406" icon={CalendarDays} note="94.2% completion rate" /><SmallMetric label="Avg. visit value" value="₹4,500" icon={FileChartColumnIncreasing} note="+3.1% vs previous period" /></div>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.8fr)]">
-        <section className="rounded-md border border-border bg-card p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-semibold">Clinic revenue</h2><p className="mt-1 text-xs text-muted-foreground">Monthly revenue over the last 12 months</p></div><div className="text-right"><p className="text-xl font-semibold">$48,290</p><p className="mt-1 flex items-center justify-end gap-1 text-[11px] text-accent-foreground"><ArrowUpRight className="size-3.5" /> 6.2%</p></div></div><div className="mt-8 grid h-48 grid-cols-12 items-end gap-2 border-b border-l border-border pl-3 pt-4 sm:gap-4">{bars.map((height, index) => <div key={index} className="flex h-full flex-col items-center justify-end gap-2"><div title={`Month ${index + 1}`} className={`w-full max-w-8 rounded-t-sm ${index === bars.length - 1 ? "bg-primary" : "bg-primary/20"}`} style={{ height: `${height}%` }} /><span className="pb-2 text-[9px] text-muted-foreground">{["N", "D", "J", "F", "M", "A", "M", "J", "J", "A", "S", "O"][index]}</span></div>)}</div><div className="mt-3 flex items-center justify-between text-[10px] text-muted-foreground"><span>Nov 2025</span><span>Oct 2026</span></div></section>
-        <section className="rounded-md border border-border bg-card"><div className="border-b border-border px-4 py-4 sm:px-5"><h2 className="text-sm font-semibold">By department</h2><p className="mt-1 text-xs text-muted-foreground">Revenue contribution</p></div><div className="space-y-4 p-4 sm:p-5">{[{ name: "General medicine", pct: 38, amount: "$18,350" }, { name: "Cardiology", pct: 27, amount: "$13,040" }, { name: "Dermatology", pct: 20, amount: "$9,658" }, { name: "Physical therapy", pct: 15, amount: "$7,242" }].map((dept) => <div key={dept.name}><div className="mb-1.5 flex justify-between gap-2 text-xs"><span className="font-medium">{dept.name}</span><span className="text-muted-foreground">{dept.amount}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${dept.pct}%` }} /></div></div>)}</div></section>
+        <section className="rounded-md border border-border bg-card p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-semibold">Clinic revenue</h2><p className="mt-1 text-xs text-muted-foreground">Monthly revenue over the last 12 months</p></div><div className="text-right"><p className="text-xl font-semibold">₹4,82,900</p><p className="mt-1 flex items-center justify-end gap-1 text-[11px] text-accent-foreground"><ArrowUpRight className="size-3.5" /> 6.2%</p></div></div><div className="mt-8 grid h-48 grid-cols-12 items-end gap-2 border-b border-l border-border pl-3 pt-4 sm:gap-4">{bars.map((height, index) => <div key={index} className="flex h-full flex-col items-center justify-end gap-2"><div title={`Month ${index + 1}`} className={`w-full max-w-8 rounded-t-sm ${index === bars.length - 1 ? "bg-primary" : "bg-primary/20"}`} style={{ height: `${height}%` }} /><span className="pb-2 text-[9px] text-muted-foreground">{["N", "D", "J", "F", "M", "A", "M", "J", "J", "A", "S", "O"][index]}</span></div>)}</div><div className="mt-3 flex items-center justify-between text-[10px] text-muted-foreground"><span>Nov 2025</span><span>Oct 2026</span></div></section>
+        <section className="rounded-md border border-border bg-card"><div className="border-b border-border px-4 py-4 sm:px-5"><h2 className="text-sm font-semibold">By examination category</h2><p className="mt-1 text-xs text-muted-foreground">Revenue contribution</p></div><div className="space-y-4 p-4 sm:p-5">{[{ name: "DG Pre-Sea & Annual Medicals", pct: 38, amount: "₹1,83,500" }, { name: "Drug & Alcohol (SAMHSA 10-Panel)", pct: 27, amount: "₹1,30,400" }, { name: "Audiometry & Vision Testing", pct: 20, amount: "₹96,580" }, { name: "Vaccination & Blood Profiles", pct: 15, amount: "₹72,420" }].map((dept) => <div key={dept.name}><div className="mb-1.5 flex justify-between gap-2 text-xs"><span className="font-medium">{dept.name}</span><span className="text-muted-foreground">{dept.amount}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${dept.pct}%` }} /></div></div>)}</div></section>
       </div>
     </div>
   );
@@ -1057,7 +1414,7 @@ function SettingsView({ onNotice }: { onNotice: (message: string) => void }) {
     <div className="grid items-start gap-5 xl:grid-cols-[220px_minmax(0,1fr)]">
       <nav aria-label="Settings categories" className="flex gap-1 overflow-x-auto border-b border-border pb-2 xl:block xl:space-y-1 xl:border-b-0 xl:pb-0">{["Clinic profile", "Preferences", "Notifications", "Access & roles"].map((label, index) => {const Icon = [HeartPulse, Settings, Bell, ShieldCheck][index]; return <button key={label} type="button" className={`flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs font-medium ${index === 0 ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"}`} onClick={() => index > 0 && onNotice(`${label} settings opened.`)}><Icon className="size-4" />{label}</button>;})}</nav>
       <div className="space-y-5">
-        <section className="rounded-md border border-border bg-card"><div className="border-b border-border px-4 py-4 sm:px-5"><h2 className="text-sm font-semibold">Clinic profile</h2><p className="mt-1 text-xs text-muted-foreground">The details your team sees across the workspace</p></div><div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5"><Field label="Clinic name" htmlFor="setting-clinic-name"><Input id="setting-clinic-name" defaultValue="Marine Clinic" /></Field><Field label="Contact email" htmlFor="setting-clinic-email"><Input id="setting-clinic-email" defaultValue="hello@marineclinic.demo" /></Field><Field label="Phone number" htmlFor="setting-clinic-phone"><Input id="setting-clinic-phone" defaultValue="+1 (212) 555-0100" /></Field><Field label="Location" htmlFor="setting-clinic-location"><Input id="setting-clinic-location" defaultValue="New York, NY" /></Field><Field label="Timezone" htmlFor="setting-clinic-timezone"><Input id="setting-clinic-timezone" defaultValue="Eastern Time (ET)" /></Field><Field label="Clinic hours" htmlFor="setting-clinic-hours"><Input id="setting-clinic-hours" defaultValue="Monday – Friday, 8 AM – 6 PM" /></Field></div><div className="flex justify-end border-t border-border px-4 py-3 sm:px-5"><Button onClick={() => onNotice("Clinic profile saved in this demo.")}>Save changes</Button></div></section>
+        <section className="rounded-md border border-border bg-card"><div className="border-b border-border px-4 py-4 sm:px-5"><h2 className="text-sm font-semibold">Clinic profile</h2><p className="mt-1 text-xs text-muted-foreground">The details your team sees across the workspace</p></div><div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5"><Field label="Clinic name" htmlFor="setting-clinic-name"><Input id="setting-clinic-name" defaultValue="Marine Clinic" /></Field><Field label="Contact email" htmlFor="setting-clinic-email"><Input id="setting-clinic-email" defaultValue="hello@marineclinic.demo" /></Field><Field label="Phone number" htmlFor="setting-clinic-phone"><Input id="setting-clinic-phone" defaultValue="+91 22 2261 4589" /></Field><Field label="Location" htmlFor="setting-clinic-location"><Input id="setting-clinic-location" defaultValue="Ballard Estate, Fort, Mumbai 400001" /></Field><Field label="Timezone" htmlFor="setting-clinic-timezone"><Input id="setting-clinic-timezone" defaultValue="India Standard Time (IST, UTC+5:30)" /></Field><Field label="Clinic hours" htmlFor="setting-clinic-hours"><Input id="setting-clinic-hours" defaultValue="Monday – Saturday, 8:30 AM – 6:30 PM" /></Field></div><div className="flex justify-end border-t border-border px-4 py-3 sm:px-5"><Button onClick={() => onNotice("Clinic profile saved in this demo.")}>Save changes</Button></div></section>
         <section className="rounded-md border border-border bg-card"><div className="border-b border-border px-4 py-4 sm:px-5"><h2 className="text-sm font-semibold">Workspace access</h2><p className="mt-1 text-xs text-muted-foreground">Current demo permissions by role</p></div><div className="space-y-3 p-4 sm:p-5"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 size-4 text-primary" /><div><p className="text-xs font-semibold">Admin access</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Full access to all clinic areas and settings.</p></div></div><div className="flex items-start gap-3"><Users className="mt-0.5 size-4 text-primary" /><div><p className="text-xs font-semibold">Staff access</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Dashboard, patients, invoices, payments, and reports.</p></div></div></div></section>
       </div>
     </div>
