@@ -19,6 +19,7 @@ describe("clinic role visibility", () => {
       "Patient Records",
       "Invoices",
       "Payments",
+      "Grievances & Reviews",
       "Staff Management",
       "Reports",
       "Activity Logs",
@@ -27,6 +28,7 @@ describe("clinic role visibility", () => {
   });
 
   it("denies Staff direct access to admin-only sections", () => {
+    expect(canAccessSection("staff", "feedback")).toBe(false);
     expect(canAccessSection("staff", "staff")).toBe(false);
     expect(canAccessSection("staff", "activity")).toBe(false);
     expect(canAccessSection("staff", "settings")).toBe(false);

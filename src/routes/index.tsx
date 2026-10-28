@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Activity,
   ArrowDownLeft,
@@ -20,19 +20,25 @@ import {
   Download,
   Edit,
   Eye,
+  EyeOff,
   FileBadge,
   FileChartColumnIncreasing,
   FilePlus2,
+  FileSpreadsheet,
   FileText,
   Filter,
   HeartPulse,
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquare,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
+  Mail,
+  Phone,
   Plus,
+  Save,
   Search,
   Settings,
   ShieldCheck,
@@ -45,13 +51,27 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
+import { AdminProfileModal, type UserProfileData } from "@/components/clinic/AdminProfileModal";
+import { ClinicLogo } from "@/components/clinic/ClinicLogo";
 import { CreateInvoiceModal } from "@/components/clinic/CreateInvoiceModal";
+import { FeedbackAdminModule } from "@/components/clinic/FeedbackAdminModule";
 import { InvoiceModal } from "@/components/clinic/InvoiceModal";
 import { InvoiceModule } from "@/components/clinic/InvoiceModule";
+import { PaymentsModule } from "@/components/clinic/PaymentsModule";
 import { PatientDetailModal } from "@/components/clinic/PatientDetailModal";
 import { PatientModal } from "@/components/clinic/PatientModal";
+import { StaffManagementModule } from "@/components/clinic/StaffManagementModule";
+import { ReportsModule } from "@/components/clinic/ReportsModule";
+import {
+  deleteInvoiceServer,
+  deletePatientServer,
+  listInvoicesServer,
+  listPatientsServer,
+  saveInvoiceServer,
+  savePatientServer,
+} from "@/lib/clinic.server";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -80,7 +100,6 @@ import {
   getVisibleSections,
   initialPatients,
   invoiceRecords,
-  paymentRecords,
   staffRecords,
   type ClinicRole,
   type ClinicSection,
@@ -91,15 +110,15 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Marine Clinic | Clinical workspace" },
+      { title: "Sailors Medical Clinic | Centre for Marine Medical Examinations" },
       {
         name: "description",
-        content: "A clear, connected view of patient care and clinic operations.",
+        content: "D.G. Shipping Approved Marine Medical Examination Centre, CBD Belapur, Navi Mumbai.",
       },
-      { property: "og:title", content: "Marine Clinic | Clinical workspace" },
+      { property: "og:title", content: "Sailors Medical Clinic | Marine Medical Examinations" },
       {
         property: "og:description",
-        content: "A clear, connected view of patient care and clinic operations.",
+        content: "D.G. Shipping Approved Marine Medical Examination Centre, CBD Belapur, Navi Mumbai.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -113,6 +132,7 @@ const navIcons: Record<ClinicSection, typeof LayoutDashboard> = {
   patients: Users,
   invoices: FileText,
   payments: CreditCard,
+  feedback: ClipboardList,
   staff: UserRound,
   reports: FileChartColumnIncreasing,
   activity: Activity,
@@ -124,6 +144,8 @@ const sectionDescriptions: Record<ClinicSection, string> = {
   patients: "View and manage your clinic's patient records.",
   invoices: "Manage billing and keep tabs on outstanding balances.",
   payments: "A real-time view of incoming payments and transactions.",
+  feedback:
+    "Review patient complaints, grievance redressal logs, and reviews. Download compliance reports in Excel (.xlsx) per government medical rules.",
   staff: "Manage your clinical team and day-to-day coverage.",
   reports: "Track clinic performance and financial health.",
   activity: "A secure timeline of changes across your clinic.",
@@ -132,6 +154,16 @@ const sectionDescriptions: Record<ClinicSection, string> = {
 
 function ClinicApp() {
   const [role, setRole] = useState<ClinicRole | null>(null);
+  const [currentUser, setCurrentUser] = useState<UserProfileData>({
+    name: "Mitali Gadge",
+    email: "admin@sailorsmedical.com",
+    role: "admin",
+    phone: "+91 95614 50104",
+    designation: "Chief Medical Administrator & Director",
+    regNo: "MMC-2015-84920 / DG-SMC-04",
+    department: "Marine Medical Examination & DG Shipping Care",
+  });
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [section, setSection] = useState<ClinicSection>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -140,6 +172,7 @@ function ClinicApp() {
   const [patientSearch, setPatientSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("Today, Oct 21, 2026");
   const [notice, setNotice] = useState("");
+  const [authLoading, setAuthLoading] = useState(true);
 
   // Patient Modal States
   const [patientModalOpen, setPatientModalOpen] = useState(false);
@@ -149,6 +182,56 @@ function ClinicApp() {
 
   // Invoice Modal State
   const [createInvoiceModalOpen, setCreateInvoiceModalOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function loadSession() {
+      try {
+        const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+        if (!active) return;
+        if (!response.ok) {
+          setRole(null);
+          return;
+        }
+        const user = (await response.json()) as UserProfileData;
+        setCurrentUser(user);
+        setRole(user.role);
+      } catch {
+        if (active) setRole(null);
+      } finally {
+        if (active) setAuthLoading(false);
+      }
+    }
+    void loadSession();
+    return () => { active = false; };
+  }, []);
+
+  // Load live Patients and Invoices from MongoDB Atlas on mount
+  useEffect(() => {
+    let active = true;
+    async function loadDataFromMongo() {
+      try {
+        const [mongoPatients, mongoInvoices] = await Promise.all([
+          listPatientsServer(),
+          listInvoicesServer(),
+        ]);
+        if (active) {
+          if (mongoPatients && mongoPatients.length > 0) {
+            setPatients(mongoPatients);
+          }
+          if (mongoInvoices && mongoInvoices.length > 0) {
+            setInvoices(mongoInvoices);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not sync with MongoDB Atlas on start, using baseline records:", err);
+      }
+    }
+    void loadDataFromMongo();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const nextSrNo = useMemo(() => {
     return patients.reduce((max, p) => Math.max(max, p.srNo || 0), 0) + 1;
@@ -169,35 +252,61 @@ function ClinicApp() {
     setDetailModalOpen(true);
   };
 
-  const handleSavePatient = (saved: PatientRecord) => {
+  const handleSavePatient = async (saved: PatientRecord) => {
     if (selectedPatientForEdit) {
       setPatients((current) =>
         current.map((item) => (item.id === saved.id ? saved : item))
       );
-      setNotice(`${saved.name}'s marine record was updated successfully.`);
+      setNotice(`${saved.name}'s marine record was updated and saved to MongoDB.`);
     } else {
       setPatients((current) => [saved, ...current]);
-      setNotice(`${saved.name} was added to patient records (Sr. #${saved.srNo}).`);
+      setNotice(`${saved.name} was added to patient records in MongoDB (Sr. #${saved.srNo}).`);
+    }
+
+    try {
+      await savePatientServer({ data: saved });
+    } catch (err) {
+      console.error("Failed to save patient to MongoDB Atlas:", err);
     }
   };
 
-  const handleDeletePatient = (id: string, name: string) => {
+  const handleDeletePatient = async (id: string, name: string) => {
     setPatients((current) => current.filter((item) => item.id !== id));
     setNotice(`${name}'s record has been removed.`);
+    try {
+      await deletePatientServer({ data: { id, name } });
+    } catch (err) {
+      console.error("Failed to remove patient from MongoDB Atlas:", err);
+    }
   };
 
-  const handleAddInvoice = (newInv: InvoiceRecord) => {
+  const handleAddInvoice = async (newInv: InvoiceRecord) => {
     setInvoices((prev) => [newInv, ...prev]);
-    setNotice(`Tax Invoice ${newInv.id} created for ${newInv.patient} (${newInv.amount}).`);
+    setNotice(`Tax Invoice ${newInv.id} created for ${newInv.patient} (${newInv.amount}) and saved to MongoDB.`);
+    try {
+      await saveInvoiceServer({ data: newInv });
+    } catch (err) {
+      console.error("Failed to save invoice to MongoDB Atlas:", err);
+    }
   };
 
-  const handleUpdateInvoice = (updated: InvoiceRecord) => {
+  const handleUpdateInvoice = async (updated: InvoiceRecord) => {
     setInvoices((prev) => prev.map((inv) => (inv.id === updated.id ? updated : inv)));
+    try {
+      await saveInvoiceServer({ data: updated });
+    } catch (err) {
+      console.error("Failed to update invoice in MongoDB Atlas:", err);
+    }
   };
 
-  const handleDeleteInvoice = (id: string) => {
+  const handleDeleteInvoice = async (id: string) => {
     setInvoices((prev) => prev.filter((inv) => inv.id !== id));
     setNotice(`Invoice ${id} has been removed.`);
+    try {
+      await deleteInvoiceServer({ data: { id } });
+    } catch (err) {
+      console.error("Failed to remove invoice from MongoDB Atlas:", err);
+    }
   };
 
   useEffect(() => {
@@ -216,13 +325,26 @@ function ClinicApp() {
     setMobileMenuOpen(false);
   };
 
+  if (authLoading) {
+    return <main className="grid min-h-svh place-items-center text-sm text-muted-foreground">Checking clinic sign-in…</main>;
+  }
+
   if (!role) {
-    return <SignIn onSignIn={setRole} />;
+    return <SignIn />;
   }
 
   const visibleSections = getVisibleSections(role);
-  const adminName = role === "admin" ? "Mitali Gadge" : "Rachel Adams";
-  const adminInitials = role === "admin" ? "MG" : "RA";
+  const adminName = currentUser.name || (role === "admin" ? "Mitali Gadge" : "Rachel Adams");
+  const adminInitials =
+    currentUser.name
+      .trim()
+      .split(" ")
+      .filter(Boolean)
+      .map((p) => p[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || (role === "admin" ? "MG" : "RA");
+
 
   return (
     <div className="min-h-svh bg-background text-foreground">
@@ -290,6 +412,16 @@ function ClinicApp() {
               <span className="text-sm font-medium">Wednesday, Oct 21</span>
               <ChevronDown className="size-4 text-muted-foreground" />
             </div>
+            <Link to="/feedback" target="_blank" className="hidden sm:inline-flex">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/5 shadow-2xs"
+                title="Open Public Grievance & Feedback Portal"
+              >
+                <MessageSquare className="size-3.5" /> Public Grievance Portal
+              </Button>
+            </Link>
             <Button
               aria-label="Notifications"
               title="Notifications"
@@ -302,14 +434,57 @@ function ClinicApp() {
               <span className="absolute right-2 top-2 size-2 rounded-full bg-primary ring-2 ring-card" />
             </Button>
             <div className="hidden h-8 w-px bg-border sm:block" />
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <button
+                type="button"
+                aria-label={`Edit ${adminName} profile`}
+                title={`Edit Profile: ${adminName} • ${role === "admin" ? "Administrator" : "Staff"}`}
+                className="group flex items-center gap-2 rounded-lg border border-border/70 bg-card/60 px-2 py-1 text-left transition-all hover:bg-muted hover:border-primary/40 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                onClick={() => setProfileModalOpen(true)}
+              >
+                <Avatar className="size-7 ring-1 ring-border group-hover:ring-primary/40 transition-colors">
+                  <AvatarFallback className="bg-primary/10 text-[11px] font-bold text-primary">
+                    {adminInitials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="hidden text-left sm:block">
+                  <div className="flex items-center gap-1.5 leading-tight">
+                    <span className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
+                      {adminName}
+                    </span>
+                    <Badge variant="outline" className="text-[9px] uppercase px-1 py-0 font-medium">
+                      {role === "admin" ? "Admin" : "Staff"}
+                    </Badge>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground truncate max-w-[140px] leading-tight mt-0.5">
+                    {currentUser.designation || (role === "admin" ? "Administrator" : "Staff")}
+                  </p>
+                </div>
+                <Edit className="size-3 text-muted-foreground/70 group-hover:text-foreground transition-colors ml-0.5" />
+              </button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                aria-label="Sign out"
+                title="Sign out of clinic workspace"
+                onClick={async () => {
+                  await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+                  window.location.assign("/");
+                }}
+              >
+                <LogOut className="size-4" />
+              </Button>
+            </div>
             <button
               type="button"
-              aria-label={`${adminName} account`}
-              title={`${adminName} · ${role === "admin" ? "Admin" : "Staff"}`}
-              className="flex items-center gap-2 rounded-md p-1.5 pr-0 text-left transition-colors hover:bg-muted"
-              onClick={() => {
-                setRole(null);
-                setSection("dashboard");
+              hidden aria-hidden="true"
+              className="hidden"
+
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+                window.location.assign("/");
               }}
             >
               <Avatar className="size-8">
@@ -378,16 +553,45 @@ function ClinicApp() {
                   onNotice={setNotice}
                 />
               )}
-              {section === "payments" && <PaymentView onNotice={setNotice} />}
-              {section === "staff" && <StaffView onNotice={setNotice} />}
-              {section === "reports" && <ReportsView dateFilter={dateFilter} onDateFilter={setDateFilter} />} 
+              {section === "payments" && (
+                <PaymentsModule
+                  patients={patients}
+                  invoices={invoices}
+                  onNotice={setNotice}
+                />
+              )}
+              {section === "feedback" && <FeedbackAdminModule onNotice={setNotice} />}
+              {section === "staff" && <StaffManagementModule onNotice={setNotice} />}
+              {section === "reports" && (
+                <ReportsModule
+                  patients={patients}
+                  invoices={invoices}
+                  dateFilter={dateFilter}
+                  onDateFilter={setDateFilter}
+                />
+              )} 
               {section === "activity" && <ActivityView />}
-              {section === "settings" && <SettingsView onNotice={setNotice} />}
+              {section === "settings" && (
+                <SettingsView
+                  currentUser={currentUser}
+                  onUpdateUser={(updated) => setCurrentUser(updated)}
+                  onNotice={setNotice}
+                  onOpenEditModal={() => setProfileModalOpen(true)}
+                />
+              )}
             </div>
           </main>
           <footer className="border-t border-border px-4 py-4 text-center text-xs text-muted-foreground sm:px-6 lg:px-8">
-            Marine Clinic <span className="mx-1.5">·</span> Secure care, clearly connected
-            <span className="mx-1.5">·</span> Workspace demo
+            Sailor's Medical Clinic <span className="mx-1.5">·</span> Centre for Marine Medical Examinations
+            <span className="mx-1.5">·</span>
+            <Link
+              to="/feedback"
+              target="_blank"
+              className="text-primary font-medium hover:underline inline-flex items-center gap-1"
+            >
+              <MessageSquare className="size-3" /> Candidate Feedback Form
+            </Link>
+            <span className="mx-1.5">·</span> MongoDB Atlas Connected
           </footer>
         </div>
       </div>
@@ -440,6 +644,13 @@ function ClinicApp() {
         }}
         onPrintNotice={() => setNotice("Medical dossier sent to print queue.")}
       />
+      <AdminProfileModal
+        open={profileModalOpen}
+        onOpenChange={setProfileModalOpen}
+        currentUser={currentUser}
+        onProfileUpdated={(updated) => setCurrentUser(updated)}
+        onNotice={setNotice}
+      />
     </div>
   );
 }
@@ -469,18 +680,8 @@ function SidebarContent({
 
   return (
     <div className="flex h-full flex-col">
-      <div className={`flex h-16 shrink-0 items-center border-b border-sidebar-border px-5 ${collapsed ? "justify-center px-3" : "gap-3"}`}>
-        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground">
-          <Stethoscope className="size-[19px]" />
-        </span>
-        {!collapsed && (
-          <div className="min-w-0">
-            <div className="text-[15px] font-semibold leading-tight">Marine Clinic</div>
-            <div className="mt-1 text-[10px] font-medium uppercase leading-none text-muted-foreground">
-              Care, connected
-            </div>
-          </div>
-        )}
+      <div className={`flex h-16 shrink-0 items-center border-b border-sidebar-border px-4 ${collapsed ? "justify-center px-2" : "gap-3"}`}>
+        <ClinicLogo size="sm" showText={!collapsed} subtitle="Marine Medical Centre" />
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-5">
@@ -490,8 +691,8 @@ function SidebarContent({
               <HeartPulse className="size-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold">Marine Clinic</p>
-              <p className="mt-0.5 truncate text-[10px] text-muted-foreground">Ballard Estate, Mumbai</p>
+              <p className="truncate text-xs font-semibold">Sailors Medical Clinic</p>
+              <p className="mt-0.5 truncate text-[10px] text-muted-foreground">CBD Belapur, Navi Mumbai</p>
             </div>
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </div>
@@ -559,14 +760,35 @@ function SidebarContent({
   );
 }
 
-function SignIn({ onSignIn }: { onSignIn: (role: ClinicRole) => void }) {
-  const [selectedRole, setSelectedRole] = useState<ClinicRole>("admin");
-  const [email, setEmail] = useState("mitali@marineclinic.demo");
-  const [password, setPassword] = useState("clinic-demo");
+function SignIn() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const chooseRole = (nextRole: ClinicRole) => {
-    setSelectedRole(nextRole);
-    setEmail(nextRole === "admin" ? "mitali@marineclinic.demo" : "rachel@marineclinic.demo");
+  const signIn = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ email, password }),
+      });
+      const result = await response.json() as { message?: string };
+      if (!response.ok) {
+        setError(result.message || "Unable to sign in.");
+        return;
+      }
+      window.location.assign("/");
+    } catch {
+      setError("Unable to connect to the clinic server.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -575,24 +797,18 @@ function SignIn({ onSignIn }: { onSignIn: (role: ClinicRole) => void }) {
         <div className="absolute right-[-12%] top-[18%] size-[450px] rounded-full border border-primary/10" />
         <div className="absolute right-[-3%] top-[26%] size-[310px] rounded-full border border-primary/10" />
         <div className="absolute right-[8%] top-[35%] size-[145px] rounded-full border border-primary/10" />
-        <div className="relative flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-md bg-primary text-primary-foreground">
-            <Stethoscope className="size-5" />
-          </span>
-          <div>
-            <div className="text-[15px] font-semibold">Marine Clinic</div>
-            <div className="text-[11px] text-muted-foreground">Care, connected</div>
-          </div>
+        <div className="relative">
+          <ClinicLogo size="lg" subtitle="Centre for Marine Medical Examinations" />
         </div>
         <div className="relative my-auto max-w-[560px] pb-12 pt-14">
           <p className="mb-4 flex items-center gap-2 text-xs font-medium uppercase text-primary">
-            <span className="size-1.5 rounded-full bg-primary" /> YOUR CLINIC. ONE CLEAR VIEW.
+            <span className="size-1.5 rounded-full bg-primary" /> D.G. SHIPPING APPROVED CLINICAL CENTRE
           </p>
           <h1 className="max-w-[500px] text-[44px] font-semibold leading-[1.1] tracking-normal text-foreground xl:text-[52px]">
-            Thoughtful care begins with a better view.
+            Centre for Marine Medical Examinations.
           </h1>
           <p className="mt-5 max-w-[430px] text-base leading-7 text-muted-foreground">
-            Keep people, care, and clinic operations moving together — from the first visit to the final follow-up.
+            CBD Belapur, Navi Mumbai • Tel: +91 95614 50104 • Email: medical@sailorsmedical.com
           </p>
           <div className="mt-10 flex items-center gap-3 border-t border-border pt-6">
             <div className="flex -space-x-2">
@@ -605,115 +821,95 @@ function SignIn({ onSignIn }: { onSignIn: (role: ClinicRole) => void }) {
               ))}
             </div>
             <p className="text-xs leading-5 text-muted-foreground">
-              <span className="font-semibold text-foreground">One connected team</span>
-              <br />working together for every patient
+              <span className="font-semibold text-foreground">D.G. Approved Doctors & Care Team</span>
+              <br />ISO 9001:2015 & ISO 45001:2018 Certified
             </p>
             <HeartPulse className="ml-auto size-8 text-primary/40" />
           </div>
         </div>
         <div className="relative flex items-center justify-between border-t border-border pt-5 text-[11px] text-muted-foreground">
-          <span>© 2026 Marine Clinic</span>
+          <span>© 2026 Sailor's Medical Clinic</span>
           <span className="flex items-center gap-1.5">
-            <ShieldCheck className="size-3.5 text-primary" /> Private and secure
+            <ShieldCheck className="size-3.5 text-primary" /> D.G. Shipping Govt. of India Approved
           </span>
         </div>
       </section>
 
       <section className="flex min-h-svh items-center justify-center px-5 py-10 sm:px-10 lg:px-12">
         <div className="w-full max-w-[430px]">
-          <div className="mb-10 flex items-center gap-3 lg:hidden">
-            <span className="grid size-10 place-items-center rounded-md bg-primary text-primary-foreground">
-              <Stethoscope className="size-5" />
-            </span>
-            <div>
-              <div className="text-[15px] font-semibold">Marine Clinic</div>
-              <div className="text-[11px] text-muted-foreground">Care, connected</div>
-            </div>
+          <div className="mb-10 lg:hidden">
+            <ClinicLogo size="md" subtitle="Marine Medical Examinations" />
           </div>
           <div className="mb-8">
-            <div className="mb-2 text-xs font-medium uppercase text-primary">Welcome back</div>
+            <div className="mb-2 text-xs font-medium uppercase text-primary">Secure Portal</div>
             <h2 className="text-[28px] font-semibold leading-tight">Sign in to your workspace</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Enter your details to access your clinic.</p>
+            <p className="mt-2 text-sm text-muted-foreground">Enter your verified clinic credentials to continue.</p>
           </div>
 
-          <form
-            className="space-y-5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onSignIn(selectedRole);
-            }}
-          >
-            <fieldset>
-              <legend className="mb-2.5 text-sm font-medium">Sign in as</legend>
-              <div className="grid grid-cols-2 gap-3">
-                {(["admin", "staff"] as const).map((nextRole) => {
-                  const active = selectedRole === nextRole;
-                  const Icon = nextRole === "admin" ? ShieldCheck : Users;
-                  return (
-                    <Button
-                      key={nextRole}
-                      type="button"
-                      variant="outline"
-                      aria-pressed={active}
-                      onClick={() => chooseRole(nextRole)}
-                      className={`h-auto justify-start gap-3 rounded-md p-3.5 text-left ${active ? "border-primary bg-primary/5 ring-1 ring-primary" : ""}`}
-                    >
-                      <span className="grid size-9 place-items-center rounded-md bg-secondary text-primary">
-                        <Icon className="size-[18px]" />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold capitalize text-foreground">
-                          {nextRole === "admin" ? "Admin" : "Staff"}
-                        </span>
-                        <span className="mt-0.5 block text-[10px] font-normal text-muted-foreground">
-                          {nextRole === "admin" ? "Full workspace" : "Care team access"}
-                        </span>
-                      </span>
-                    </Button>
-                  );
-                })}
-              </div>
-            </fieldset>
-
+          <form className="space-y-4" onSubmit={signIn}>
             <div className="space-y-2">
               <label htmlFor="clinic-email" className="text-sm font-medium">Email address</label>
               <Input
                 id="clinic-email"
                 type="email"
                 autoComplete="username"
+                placeholder="medical@sailorsmedical.com"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                className="h-10 rounded-md"
                 required
+                disabled={loading}
               />
             </div>
             <div className="space-y-2">
               <label htmlFor="clinic-password" className="text-sm font-medium">Password</label>
-              <Input
-                id="clinic-password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="h-10 rounded-md"
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="clinic-password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  placeholder="Enter password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  disabled={loading}
+                  className="pr-16"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-primary"
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
             </div>
-
-            <Button type="submit" className="h-10 w-full justify-center rounded-md text-sm font-semibold">
-              Sign in securely
-              <ArrowRight className="size-4" />
+            {error && <p role="alert" className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>}
+            <Button type="submit" disabled={loading} className="h-11 w-full justify-center rounded-md text-sm font-semibold">
+              {loading ? "Signing in…" : "Sign in"}
+              {!loading && <ArrowRight className="size-4" />}
             </Button>
           </form>
 
-          <div className="my-6 flex items-center gap-3 text-[11px] text-muted-foreground">
+          <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-3 text-center">
+            <Link
+              to="/feedback"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+            >
+              <MessageSquare className="size-3.5" /> Patient Grievance & Feedback Portal →
+            </Link>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Official public submission for reviews, complaints, and inquiries
+            </p>
+          </div>
+
+          <div className="my-5 flex items-center gap-3 text-[11px] text-muted-foreground">
             <div className="h-px flex-1 bg-border" />
-            <span>DEMO WORKSPACE</span>
+            <span>CLINICAL WORKSPACE</span>
             <div className="h-px flex-1 bg-border" />
           </div>
           <p className="text-center text-xs leading-5 text-muted-foreground">
-            Use the role selector above to explore the Admin and Staff experience.
-            <br />No patient information is stored.
+            Workspace access is granted by your clinic administrator.
+            <br />All data is synced with MongoDB Atlas.
           </p>
         </div>
       </section>
@@ -771,6 +967,17 @@ function PageActions({
     );
   }
   return null;
+}
+
+function PageActionsStaff() {
+  if (false) {
+    return (
+      <Button onClick={() => onNotice("Invite link copied for a new team member.")} className="gap-2">
+        <UserRoundPlus className="size-4" /> Add team member
+      </Button>
+    );
+  }
+
 }
 
 function Dashboard({
@@ -1356,26 +1563,6 @@ function PatientTable({
   );
 }
 
-function PaymentView({ onNotice }: { onNotice: (message: string) => void }) {
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <SmallMetric label="Collected today" value="₹24,500" icon={WalletCards} note="5 transactions" />
-        <SmallMetric label="This month" value="₹3,84,500" icon={CreditCard} note="+9.4% vs last month" />
-        <SmallMetric label="Processing" value="3" icon={Clock3} note="₹18,500 awaiting settlement" />
-      </div>
-      <section className="rounded-md border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
-          <div><h2 className="text-sm font-semibold">Recent transactions</h2><p className="mt-1 text-xs text-muted-foreground">Incoming payments across all methods</p></div>
-          <div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => onNotice("Showing transactions for all methods.")}><Filter /> Filter</Button><Button size="sm" onClick={() => onNotice("Payment recording form opened.")}><Plus /> Record payment</Button></div>
-        </div>
-        <div className="overflow-x-auto"><Table><TableHeader><TableRow className="hover:bg-transparent"><TableHead className="pl-5">Transaction</TableHead><TableHead>Patient</TableHead><TableHead>Payment method</TableHead><TableHead>Date</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{paymentRecords.map((payment) => <TableRow key={payment.id}><TableCell className="whitespace-nowrap pl-5 text-xs font-semibold">{payment.id}</TableCell><TableCell className="whitespace-nowrap text-xs font-medium">{payment.patient}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{payment.method}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{payment.date}</TableCell><TableCell className="whitespace-nowrap text-xs font-semibold">{payment.amount}</TableCell><TableCell><StatusBadge status={payment.status} /></TableCell></TableRow>)}</TableBody></Table></div>
-        <TableFooterNote text="Showing 5 of 509 transactions" />
-      </section>
-    </div>
-  );
-}
-
 function StaffView({ onNotice }: { onNotice: (message: string) => void }) {
   return (
     <div className="space-y-5">
@@ -1409,18 +1596,355 @@ function ActivityView() {
   );
 }
 
-function SettingsView({ onNotice }: { onNotice: (message: string) => void }) {
+function SettingsView({
+  currentUser,
+  onUpdateUser,
+  onNotice,
+  onOpenEditModal,
+}: {
+  currentUser: UserProfileData;
+  onUpdateUser: (user: UserProfileData) => void;
+  onNotice: (message: string) => void;
+  onOpenEditModal: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<"admin" | "clinic" | "access">("admin");
+  const [name, setName] = useState(currentUser.name);
+  const [phone, setPhone] = useState(currentUser.phone || "");
+  const [designation, setDesignation] = useState(currentUser.designation || "");
+  const [regNo, setRegNo] = useState(currentUser.regNo || "");
+  const [department, setDepartment] = useState(currentUser.department || "");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setName(currentUser.name);
+    setPhone(currentUser.phone || "");
+    setDesignation(currentUser.designation || "");
+    setRegNo(currentUser.regNo || "");
+    setDepartment(currentUser.department || "");
+  }, [currentUser]);
+
+  const initials =
+    name
+      .trim()
+      .split(" ")
+      .filter(Boolean)
+      .map((p) => p[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || (currentUser.role === "admin" ? "MG" : "RA");
+
+  async function handleSaveAdminProfile(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) {
+      onNotice("Please specify the administrator name.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/auth/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: phone.trim(),
+          designation: designation.trim(),
+          regNo: regNo.trim(),
+          department: department.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save administrator profile.");
+      }
+
+      const data = (await response.json()) as { success: boolean; user: UserProfileData };
+      const updated: UserProfileData = {
+        ...currentUser,
+        name: name.trim(),
+        phone: phone.trim(),
+        designation: designation.trim(),
+        regNo: regNo.trim(),
+        department: department.trim(),
+        ...data.user,
+      };
+      onUpdateUser(updated);
+      onNotice("Admin profile credentials saved to MongoDB Atlas.");
+    } catch {
+      onNotice("Failed to save admin profile to database.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[220px_minmax(0,1fr)]">
-      <nav aria-label="Settings categories" className="flex gap-1 overflow-x-auto border-b border-border pb-2 xl:block xl:space-y-1 xl:border-b-0 xl:pb-0">{["Clinic profile", "Preferences", "Notifications", "Access & roles"].map((label, index) => {const Icon = [HeartPulse, Settings, Bell, ShieldCheck][index]; return <button key={label} type="button" className={`flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs font-medium ${index === 0 ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"}`} onClick={() => index > 0 && onNotice(`${label} settings opened.`)}><Icon className="size-4" />{label}</button>;})}</nav>
+      <nav aria-label="Settings categories" className="flex gap-1 overflow-x-auto border-b border-border pb-2 xl:block xl:space-y-1 xl:border-b-0 xl:pb-0">
+        <button
+          type="button"
+          className={`flex w-full shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs font-medium transition-colors ${
+            activeTab === "admin" ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-muted"
+          }`}
+          onClick={() => setActiveTab("admin")}
+        >
+          <UserRound className="size-4" />
+          Administrator profile
+        </button>
+        <button
+          type="button"
+          className={`flex w-full shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs font-medium transition-colors ${
+            activeTab === "clinic" ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-muted"
+          }`}
+          onClick={() => setActiveTab("clinic")}
+        >
+          <HeartPulse className="size-4" />
+          Clinic profile
+        </button>
+        <button
+          type="button"
+          className={`flex w-full shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs font-medium transition-colors ${
+            activeTab === "access" ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-muted"
+          }`}
+          onClick={() => setActiveTab("access")}
+        >
+          <ShieldCheck className="size-4" />
+          Access & roles
+        </button>
+        <button
+          type="button"
+          className="flex w-full shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-muted"
+          onClick={() => onNotice("Preferences settings opened.")}
+        >
+          <Settings className="size-4" />
+          Preferences
+        </button>
+        <button
+          type="button"
+          className="flex w-full shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-muted"
+          onClick={() => onNotice("Notification channels are all active.")}
+        >
+          <Bell className="size-4" />
+          Notifications
+        </button>
+      </nav>
+
       <div className="space-y-5">
-        <section className="rounded-md border border-border bg-card"><div className="border-b border-border px-4 py-4 sm:px-5"><h2 className="text-sm font-semibold">Clinic profile</h2><p className="mt-1 text-xs text-muted-foreground">The details your team sees across the workspace</p></div><div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5"><Field label="Clinic name" htmlFor="setting-clinic-name"><Input id="setting-clinic-name" defaultValue="Marine Clinic" /></Field><Field label="Contact email" htmlFor="setting-clinic-email"><Input id="setting-clinic-email" defaultValue="hello@marineclinic.demo" /></Field><Field label="Phone number" htmlFor="setting-clinic-phone"><Input id="setting-clinic-phone" defaultValue="+91 22 2261 4589" /></Field><Field label="Location" htmlFor="setting-clinic-location"><Input id="setting-clinic-location" defaultValue="Ballard Estate, Fort, Mumbai 400001" /></Field><Field label="Timezone" htmlFor="setting-clinic-timezone"><Input id="setting-clinic-timezone" defaultValue="India Standard Time (IST, UTC+5:30)" /></Field><Field label="Clinic hours" htmlFor="setting-clinic-hours"><Input id="setting-clinic-hours" defaultValue="Monday – Saturday, 8:30 AM – 6:30 PM" /></Field></div><div className="flex justify-end border-t border-border px-4 py-3 sm:px-5"><Button onClick={() => onNotice("Clinic profile saved in this demo.")}>Save changes</Button></div></section>
-        <section className="rounded-md border border-border bg-card"><div className="border-b border-border px-4 py-4 sm:px-5"><h2 className="text-sm font-semibold">Workspace access</h2><p className="mt-1 text-xs text-muted-foreground">Current demo permissions by role</p></div><div className="space-y-3 p-4 sm:p-5"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 size-4 text-primary" /><div><p className="text-xs font-semibold">Admin access</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Full access to all clinic areas and settings.</p></div></div><div className="flex items-start gap-3"><Users className="mt-0.5 size-4 text-primary" /><div><p className="text-xs font-semibold">Staff access</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Dashboard, patients, invoices, payments, and reports.</p></div></div></div></section>
+        {activeTab === "admin" && (
+          <section className="rounded-md border border-border bg-card">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold">Administrator Profile & Medical Credentials</h2>
+                  <Badge variant="outline" className="text-[10px]">
+                    MongoDB Synced
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Official personal credentials and licensing information displayed across medical certificates and reports
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onOpenEditModal}
+                className="gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/5"
+              >
+                <Edit className="size-3.5" /> Quick Edit Modal
+              </Button>
+            </div>
+
+            <div className="border-b border-border bg-muted/20 p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3.5">
+                  <Avatar className="size-12 ring-2 ring-primary/20">
+                    <AvatarFallback className="bg-primary text-primary-foreground font-bold">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-foreground">{name}</span>
+                      <Badge className="text-[9px] uppercase">{currentUser.role}</Badge>
+                    </div>
+                    <p className="text-xs text-primary font-medium mt-0.5">
+                      {designation || "Administrator"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
+                      <span>{currentUser.email}</span>
+                      {phone && <span>• {phone}</span>}
+                    </p>
+                  </div>
+                </div>
+
+                {regNo && (
+                  <div className="rounded-md border border-border bg-background p-2 text-right">
+                    <span className="block text-[9px] uppercase tracking-wider text-muted-foreground">
+                      Council Reg. No.
+                    </span>
+                    <span className="text-xs font-mono font-semibold">{regNo}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveAdminProfile}>
+              <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+                <Field label="Administrator Name" htmlFor="admin-edit-name">
+                  <Input
+                    id="admin-edit-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Dr. Mitali Gadge"
+                    required
+                  />
+                </Field>
+                <Field label="Official Login Email" htmlFor="admin-edit-email">
+                  <Input
+                    id="admin-edit-email"
+                    value={currentUser.email}
+                    readOnly
+                    disabled
+                    className="bg-muted/50 cursor-not-allowed"
+                  />
+                </Field>
+                <Field label="Mobile / Contact Phone" htmlFor="admin-edit-phone">
+                  <Input
+                    id="admin-edit-phone"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+91 95614 50104"
+                  />
+                </Field>
+                <Field label="Professional Designation" htmlFor="admin-edit-designation">
+                  <Input
+                    id="admin-edit-designation"
+                    value={designation}
+                    onChange={(e) => setDesignation(e.target.value)}
+                    placeholder="Chief Medical Officer / Clinic Administrator"
+                  />
+                </Field>
+                <Field label="Medical Council / DG Reg. No." htmlFor="admin-edit-regno">
+                  <Input
+                    id="admin-edit-regno"
+                    value={regNo}
+                    onChange={(e) => setRegNo(e.target.value)}
+                    placeholder="MMC-2015-84920 / DG-SMC-04"
+                  />
+                </Field>
+                <Field label="Clinical Division / Department" htmlFor="admin-edit-dept">
+                  <Input
+                    id="admin-edit-dept"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    placeholder="Marine Medical Examination & DG Shipping Care"
+                  />
+                </Field>
+              </div>
+              <div className="flex justify-end gap-2 border-t border-border px-4 py-3 sm:px-5">
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isSaving}
+                  className="gap-1.5"
+                >
+                  <Save className="size-3.5" />
+                  {isSaving ? "Saving to MongoDB..." : "Save Admin Profile"}
+                </Button>
+              </div>
+            </form>
+          </section>
+        )}
+
+        {activeTab === "clinic" && (
+          <section className="rounded-md border border-border bg-card">
+            <div className="border-b border-border px-4 py-4 sm:px-5">
+              <h2 className="text-sm font-semibold">Clinic profile</h2>
+              <p className="mt-1 text-xs text-muted-foreground">The details your team sees across the workspace</p>
+            </div>
+            <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+              <Field label="Clinic name" htmlFor="setting-clinic-name">
+                <Input id="setting-clinic-name" defaultValue="Sailor's Medical Clinic" />
+              </Field>
+              <Field label="Contact email" htmlFor="setting-clinic-email">
+                <Input id="setting-clinic-email" defaultValue="medical@sailorsmedical.com" />
+              </Field>
+              <Field label="Phone number" htmlFor="setting-clinic-phone">
+                <Input id="setting-clinic-phone" defaultValue="+91 95614 50104" />
+              </Field>
+              <Field label="Location" htmlFor="setting-clinic-location">
+                <Input id="setting-clinic-location" defaultValue="Shop No. 21, Punit Tower - 1, CBD Belapur, Navi Mumbai" />
+              </Field>
+              <Field label="Timezone" htmlFor="setting-clinic-timezone">
+                <Input id="setting-clinic-timezone" defaultValue="India Standard Time (IST, UTC+5:30)" />
+              </Field>
+              <Field label="Clinic hours" htmlFor="setting-clinic-hours">
+                <Input id="setting-clinic-hours" defaultValue="Monday – Saturday, 8:30 AM – 6:30 PM" />
+              </Field>
+            </div>
+            <div className="flex justify-end border-t border-border px-4 py-3 sm:px-5">
+              <Button size="sm" onClick={() => onNotice("Clinic profile saved.")}>Save changes</Button>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "access" && (
+          <section className="rounded-md border border-border bg-card">
+            <div className="border-b border-border px-4 py-4 sm:px-5">
+              <h2 className="text-sm font-semibold">Workspace access</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Current clinic role-based access control</p>
+            </div>
+            <div className="space-y-3 p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="mt-0.5 size-4 text-primary" />
+                <div>
+                  <p className="text-xs font-semibold">Admin access</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Full access to all clinic areas: Patient Records, Invoices, Payments, Grievances & Reviews, Staff Management, Reports, Activity Logs, and System Settings.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Users className="mt-0.5 size-4 text-primary" />
+                <div>
+                  <p className="text-xs font-semibold">Staff access</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Access to daily clinical operations: Dashboard, Patient Records, Invoices, Payments, and Reports.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+/* obsolete remnants
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );
 }
 
+
+
+}
+  return (
+    <div className="grid items-start gap-5 xl:grid-cols-[220px_minmax(0,1fr)]">
+
+      <div className="space-y-5">
+
+
+      </div>
+    </div>
+  );
+}
+
+*/
 function SmallMetric({
   label,
   value,

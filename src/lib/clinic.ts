@@ -5,6 +5,7 @@ export type ClinicSection =
   | "patients"
   | "invoices"
   | "payments"
+  | "feedback"
   | "staff"
   | "reports"
   | "activity"
@@ -15,6 +16,7 @@ export const clinicSections: Array<{ id: ClinicSection; label: string; group: st
   { id: "patients", label: "Patient Records", group: "Workspace" },
   { id: "invoices", label: "Invoices", group: "Workspace" },
   { id: "payments", label: "Payments", group: "Workspace" },
+  { id: "feedback", label: "Grievances & Reviews", group: "Clinic administration" },
   { id: "staff", label: "Staff Management", group: "Clinic administration" },
   { id: "reports", label: "Reports", group: "Clinic administration" },
   { id: "activity", label: "Activity Logs", group: "Clinic administration" },

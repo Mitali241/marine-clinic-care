@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ClinicLogo } from "@/components/clinic/ClinicLogo";
 import { amountToWordsINR, formatINR, type InvoiceRecord } from "@/lib/clinic";
 
 interface InvoiceDocumentProps {
@@ -86,23 +87,21 @@ export function InvoiceDocument({ invoice, onPrint, onClose }: InvoiceDocumentPr
         <div className="border-b-2 border-primary/20 pb-6">
           <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
             <div className="flex items-start gap-3.5">
-              <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm print:border print:border-primary">
-                <Ship className="size-7" />
-              </span>
+              <ClinicLogo size="lg" showText={false} />
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                  MARINE CLINIC CARE
+                  SAILOR'S MEDICAL CLINIC
                 </h1>
                 <p className="text-xs font-semibold text-primary uppercase tracking-wider mt-0.5">
-                  DG Shipping Approved Maritime Medical Centre
+                  Centre for Marine Medical Examinations • D.G. Shipping Approved Doctors
                 </p>
-                <p className="text-[11px] text-muted-foreground mt-1 max-w-[340px] leading-relaxed">
-                  402, Maritime Corporate Tower, Ballard Estate, Fort, Mumbai, Maharashtra 400001, India
+                <p className="text-[11px] text-muted-foreground mt-1 max-w-[420px] leading-relaxed">
+                  Shop No. 21, Punit Tower - 1, Sec-11, CBD Belapur, Navi Mumbai | Mob.: +91 95614 50104 | Email: medical@sailorsmedical.com
                 </p>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground mt-1.5 font-mono">
-                  <span>GSTIN: 27AABCM9124P1Z3</span>
+                  <span>ISO 9001:2015 & ISO 45001:2018 Certified</span>
                   <span>·</span>
-                  <span>DG Approval No: DG-MED-MUM/2024/082</span>
+                  <span>GSTIN: 27AABCM9124P1Z3</span>
                 </div>
               </div>
             </div>
